@@ -3,17 +3,20 @@ import 'package:uuid/uuid.dart';
 import '../../../../shared/models/training_model.dart';
 import '../../../../shared/models/user_model.dart';
 import '../../../../shared/services/exercise_library_service.dart';
+import '../../../../shared/services/training_service.dart';
 import '../../../../shared/widgets/common/custom_button.dart';
 import '../../../../shared/widgets/common/custom_text_field.dart';
 
 class WorkoutCreationWizard extends StatefulWidget {
   final List<UserModel> trainees;
   final Function(TrainingModel) onWorkoutCreated;
+  final TrainingModel? initialWorkout;
 
   const WorkoutCreationWizard({
     super.key,
     required this.trainees,
     required this.onWorkoutCreated,
+    this.initialWorkout,
   });
 
   @override
@@ -27,25 +30,57 @@ class _WorkoutCreationWizardState extends State<WorkoutCreationWizard> {
   int _currentPage = 0;
   final int _totalPages = 4;
 
-  // Form controllers
   final _nameController = TextEditingController();
   final _descriptionController = TextEditingController();
   final _notesController = TextEditingController();
 
-  // Form data
-  UserModel? _selectedTrainee;
+  List<UserModel> _selectedTrainees = [];
   DateTime _scheduledDate = DateTime.now().add(const Duration(days: 1));
   String _difficulty = 'beginner';
   int _estimatedDuration = 30;
+
   String _category = 'strength';
   List<ExerciseModel> _selectedExercises = [];
+
+  // Recurrence fields
+  String _recurrenceFrequency = 'None';
+  int _recurrenceCount = 1;
+  int _recurrenceDayCount = 1;
 
   @override
   void initState() {
     super.initState();
-    // If only one trainee, pre-select them
-    if (widget.trainees.length == 1) {
-      _selectedTrainee = widget.trainees.first;
+    if (widget.initialWorkout != null) {
+      final w = widget.initialWorkout!;
+      _nameController.text = w.name;
+      _descriptionController.text = w.description;
+      _notesController.text = w.notes ?? '';
+      _scheduledDate = w.scheduledDate;
+      _difficulty = w.difficulty;
+      _estimatedDuration = w.estimatedDuration;
+      _category = w.category;
+      // Deep copy exercises to allow editing
+      _selectedExercises = w.exercises.map((e) => ExerciseModel(
+        id: e.id,
+        name: e.name,
+        sets: e.sets,
+        reps: e.reps,
+        weight: e.weight,
+        notes: e.notes,
+        category: e.category,
+        targetMuscle: e.targetMuscle,
+        equipment: e.equipment,
+        instructions: e.instructions,
+        restTimeSeconds: e.restTimeSeconds,
+      )).toList();
+      // Select the trainee for editing
+      final trainee = widget.trainees.firstWhere(
+        (t) => t.id == w.traineeId,
+        orElse: () => widget.trainees.first,
+      );
+      _selectedTrainees = [trainee];
+    } else if (widget.trainees.length == 1) {
+      _selectedTrainees = [widget.trainees.first];
     }
   }
 
@@ -204,8 +239,8 @@ class _WorkoutCreationWizardState extends State<WorkoutCreationWizard> {
                 const Text('Estimated Duration (minutes)'),
                 Slider(
                   value: _estimatedDuration.toDouble(),
-                  min: 15,
-                  max: 120,
+                  min: 15.0,
+                  max: 120.0,
                   divisions: 21,
                   label: '$_estimatedDuration min',
                   onChanged: (value) {
@@ -224,6 +259,72 @@ class _WorkoutCreationWizardState extends State<WorkoutCreationWizard> {
               trailing: const Icon(Icons.calendar_today),
               onTap: _selectDate,
             ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: DropdownButtonFormField<String>(
+                      decoration: const InputDecoration(
+                        labelText: 'Recurrence',
+                        border: OutlineInputBorder(),
+                      ),
+                      value: _recurrenceFrequency,
+                      items: ['None', 'Daily', 'Weekly', 'Monthly']
+                          .map((freq) => DropdownMenuItem(
+                                value: freq,
+                                child: Text(freq),
+                              ))
+                          .toList(),
+                      onChanged: (value) {
+                        setState(() {
+                          _recurrenceFrequency = value!;
+                          if (_recurrenceFrequency == 'Daily' && (_recurrenceDayCount < 1 || _recurrenceDayCount > 7)) {
+                            _recurrenceDayCount = 1;
+                          }
+                        });
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  if (_recurrenceFrequency == 'Daily')
+                    Expanded(
+                      child: DropdownButtonFormField<int>(
+                        decoration: const InputDecoration(
+                          labelText: 'Repeat for (days)',
+                          border: OutlineInputBorder(),
+                        ),
+                        value: _recurrenceDayCount,
+                        items: [1,2,3,4,5,6,7]
+                            .map((day) => DropdownMenuItem(
+                                  value: day,
+                                  child: Text('$day day${day > 1 ? 's' : ''}'),
+                                ))
+                            .toList(),
+                        onChanged: (val) {
+                          setState(() {
+                            _recurrenceDayCount = val ?? 1;
+                          });
+                        },
+                      ),
+                    ),
+                  if (_recurrenceFrequency == 'Weekly' || _recurrenceFrequency == 'Monthly')
+                    Expanded(
+                      child: TextFormField(
+                        decoration: InputDecoration(
+                          labelText: _recurrenceFrequency == 'Weekly' ? 'Repeat for (weeks)' : 'Repeat for (months)',
+                          border: const OutlineInputBorder(),
+                        ),
+                        keyboardType: TextInputType.number,
+                        initialValue: _recurrenceCount.toString(),
+                        onChanged: (val) {
+                          setState(() {
+                            _recurrenceCount = int.tryParse(val) ?? 1;
+                          });
+                        },
+                      ),
+                    ),
+                ],
+              ),
           ],
         ),
       ),
@@ -237,7 +338,7 @@ class _WorkoutCreationWizardState extends State<WorkoutCreationWizard> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const Text(
-            'Select Trainee',
+            'Select Trainees',
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 16),
@@ -246,8 +347,7 @@ class _WorkoutCreationWizardState extends State<WorkoutCreationWizard> {
               itemCount: widget.trainees.length,
               itemBuilder: (context, index) {
                 final trainee = widget.trainees[index];
-                final isSelected = _selectedTrainee?.id == trainee.id;
-                
+                final isSelected = _selectedTrainees.any((t) => t.id == trainee.id);
                 return Card(
                   color: isSelected ? Theme.of(context).primaryColor.withOpacity(0.1) : null,
                   child: ListTile(
@@ -267,14 +367,18 @@ class _WorkoutCreationWizardState extends State<WorkoutCreationWizard> {
                       ),
                     ),
                     subtitle: Text(trainee.email),
-                    trailing: isSelected 
-                        ? Icon(Icons.check_circle, color: Theme.of(context).primaryColor)
-                        : null,
-                    onTap: () {
-                      setState(() {
-                        _selectedTrainee = trainee;
-                      });
-                    },
+                    trailing: Checkbox(
+                      value: isSelected,
+                      onChanged: (checked) {
+                        setState(() {
+                          if (checked == true) {
+                            _selectedTrainees.add(trainee);
+                          } else {
+                            _selectedTrainees.removeWhere((t) => t.id == trainee.id);
+                          }
+                        });
+                      },
+                    ),
                   ),
                 );
               },
@@ -387,8 +491,8 @@ class _WorkoutCreationWizardState extends State<WorkoutCreationWizard> {
             ]),
             const SizedBox(height: 16),
             _buildReviewCard('Assigned To', [
-              'Trainee: ${_selectedTrainee?.name ?? 'None selected'}',
-              'Email: ${_selectedTrainee?.email ?? ''}',
+            'Trainees: ${_selectedTrainees.isNotEmpty ? _selectedTrainees.map((t) => t.name).join(", ") : 'None selected'}',
+            'Emails: ${_selectedTrainees.isNotEmpty ? _selectedTrainees.map((t) => t.email).join(", ") : ''}',
             ]),
             const SizedBox(height: 16),
             _buildReviewCard('Exercises (${_selectedExercises.length})', 
@@ -480,9 +584,13 @@ class _WorkoutCreationWizardState extends State<WorkoutCreationWizard> {
   bool _canProceedToNext() {
     switch (_currentPage) {
       case 0:
-        return _nameController.text.isNotEmpty && _descriptionController.text.isNotEmpty;
+        // Allow next if name, description, category, and difficulty are filled (all have defaults)
+        return _nameController.text.isNotEmpty &&
+               _descriptionController.text.isNotEmpty &&
+               _category.isNotEmpty &&
+               _difficulty.isNotEmpty;
       case 1:
-        return _selectedTrainee != null;
+        return _selectedTrainees.isNotEmpty;
       case 2:
         return _selectedExercises.isNotEmpty;
       default:
@@ -493,7 +601,7 @@ class _WorkoutCreationWizardState extends State<WorkoutCreationWizard> {
   bool _canCreateWorkout() {
     return _nameController.text.isNotEmpty &&
            _descriptionController.text.isNotEmpty &&
-           _selectedTrainee != null &&
+       _selectedTrainees.isNotEmpty &&
            _selectedExercises.isNotEmpty;
   }
 
@@ -562,26 +670,56 @@ class _WorkoutCreationWizardState extends State<WorkoutCreationWizard> {
   }
 
   void _createWorkout() {
-    final workout = TrainingModel(
-      id: const Uuid().v4(),
-      name: _nameController.text,
-      description: _descriptionController.text,
-      traineeId: _selectedTrainee!.id,
-      trainerId: 'current_trainer_id', // This will be updated by the parent
-      exercises: _selectedExercises,
-      scheduledDate: _scheduledDate,
-      difficulty: _difficulty,
-      estimatedDuration: _estimatedDuration,
-      category: _category,
-      notes: _notesController.text.isNotEmpty ? _notesController.text : null,
-    );
+    int totalCreated = 0;
+    Duration recurrenceStep;
+    switch (_recurrenceFrequency) {
+      case 'Daily':
+        recurrenceStep = const Duration(days: 1);
+        break;
+      case 'Weekly':
+        recurrenceStep = const Duration(days: 7);
+        break;
+      case 'Monthly':
+        recurrenceStep = const Duration(days: 30);
+        break;
+      default:
+        recurrenceStep = Duration.zero;
+    }
 
-    widget.onWorkoutCreated(workout);
+    for (final trainee in _selectedTrainees) {
+      for (int i = 0; i < (_recurrenceFrequency == 'None' ? 1 : _recurrenceCount); i++) {
+        final scheduledDate = recurrenceStep == Duration.zero
+            ? _scheduledDate
+            : _scheduledDate.add(recurrenceStep * i);
+        final traineeWorkout = TrainingModel(
+          id: widget.initialWorkout?.id ?? const Uuid().v4(),
+          name: _nameController.text,
+          description: _descriptionController.text,
+          exercises: _selectedExercises,
+          traineeId: trainee.id,
+          trainerId: widget.trainees.isNotEmpty ? widget.trainees.first.id : '', // fallback, update as needed
+          scheduledDate: scheduledDate,
+          difficulty: _difficulty,
+          estimatedDuration: _estimatedDuration,
+          category: _category,
+          notes: _notesController.text.isNotEmpty ? _notesController.text : null,
+        );
+        if (widget.initialWorkout != null && i == 0) {
+          // Editing: update existing only for first occurrence
+          widget.onWorkoutCreated(traineeWorkout);
+        } else {
+          // Creating: add new
+          TrainingService().createTraining(traineeWorkout);
+          widget.onWorkoutCreated(traineeWorkout);
+        }
+        totalCreated++;
+      }
+    }
     Navigator.pop(context);
-
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Workout "${workout.name}" created successfully! 🎉'),
+        content: Text(widget.initialWorkout != null
+            ? 'Workout updated!' : 'Workout created for $totalCreated workouts! 🎉'),
         backgroundColor: Colors.green,
       ),
     );

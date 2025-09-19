@@ -11,6 +11,7 @@ import '../../../../core/dependency_injection/injection_container.dart';
 import '../../../../routing/route_names.dart';
 import '../widgets/workout_creation_wizard.dart';
 
+
 class TrainerDashboardPage extends StatefulWidget {
   const TrainerDashboardPage({super.key});
 
@@ -21,12 +22,51 @@ class TrainerDashboardPage extends StatefulWidget {
 class _TrainerDashboardPageState extends State<TrainerDashboardPage> with SingleTickerProviderStateMixin {
   final UserService _userService = sl.get<UserService>();
   final TrainingService _trainingService = sl.get<TrainingService>();
-  
+
   late TabController _tabController;
   List<UserModel> _trainees = [];
   List<TrainingModel> _trainings = [];
   bool _isLoading = true;
-  
+
+  // ...existing code...
+
+  void _editWorkout(TrainingModel training) async {
+    await showDialog(
+      context: context,
+      builder: (context) => WorkoutCreationWizard(
+        trainees: _trainees,
+        initialWorkout: training,
+        onWorkoutCreated: (editedWorkout) async {
+          final updated = training.copyWith(
+            name: editedWorkout.name,
+            description: editedWorkout.description,
+            exercises: editedWorkout.exercises,
+            scheduledDate: editedWorkout.scheduledDate,
+            difficulty: editedWorkout.difficulty,
+            estimatedDuration: editedWorkout.estimatedDuration,
+            category: editedWorkout.category,
+            notes: editedWorkout.notes,
+            traineeId: editedWorkout.traineeId,
+          );
+          await TrainingService().updateTraining(updated);
+          setState(() {
+            final idx = _trainings.indexWhere((t) => t.id == training.id);
+            if (idx != -1) _trainings[idx] = updated;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Workout "${updated.name}" updated')),
+          );
+        },
+      ),
+    );
+  }
+
+  UserModel _getUserById(String id) {
+    // Replace with your actual user lookup logic
+    // For now, just return a dummy user
+    return UserModel(id: id, name: 'Trainee', email: 'trainee@email.com', role: UserRole.trainee, createdAt: DateTime.now());
+  }
+
   @override
   void initState() {
     super.initState();
@@ -384,6 +424,17 @@ class _TrainerDashboardPageState extends State<TrainerDashboardPage> with Single
                                       ],
                                     ),
                                   ),
+                                  PopupMenuItem(
+                                    value: 'edit',
+                                    enabled: !training.isCompleted,
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.edit, color: training.isCompleted ? Colors.grey : null),
+                                        SizedBox(width: 8),
+                                        Text('Edit', style: TextStyle(color: training.isCompleted ? Colors.grey : null)),
+                                      ],
+                                    ),
+                                  ),
                                   const PopupMenuItem(
                                     value: 'duplicate',
                                     child: Row(
@@ -409,6 +460,9 @@ class _TrainerDashboardPageState extends State<TrainerDashboardPage> with Single
                                   switch (value) {
                                     case 'view':
                                       _viewWorkoutDetails(training);
+                                      break;
+                                    case 'edit':
+                                      _editWorkout(training);
                                       break;
                                     case 'duplicate':
                                       _duplicateWorkout(training);
@@ -803,7 +857,40 @@ class _TrainerDashboardPageState extends State<TrainerDashboardPage> with Single
               const Text('Exercises:', style: TextStyle(fontWeight: FontWeight.bold)),
               ...training.exercises.map((exercise) => Padding(
                 padding: const EdgeInsets.only(left: 16, top: 4),
-                child: Text('• ${exercise.name} - ${exercise.sets}×${exercise.reps}${exercise.weight != null ? ' @ ${exercise.weight}kg' : ''}'),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('• ${exercise.name}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                    // Proposed Effort (trainer input)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 16.0, top: 2.0, bottom: 2.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Proposed Effort:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                          Text(
+                            '${exercise.sets} sets × ${exercise.reps} reps${exercise.weight != null ? ' @ ${exercise.weight}kg' : ''}',
+                            style: const TextStyle(fontSize: 13),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (exercise.actualSets.isNotEmpty) ...[
+                      const Padding(
+                        padding: EdgeInsets.only(left: 16.0, top: 2.0, bottom: 2.0),
+                        child: Text('Actual Results:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                      ),
+                      for (int i = 0; i < exercise.actualSets.length; i++)
+                        Padding(
+                          padding: const EdgeInsets.only(left: 32.0, top: 2.0, bottom: 2.0),
+                          child: Text(
+                            'Set ${i + 1}: ${exercise.actualSets[i].reps} reps, ${exercise.actualSets[i].kg} kg',
+                            style: const TextStyle(fontSize: 13),
+                          ),
+                        ),
+                    ]
+                  ],
+                ),
               )),
               if (training.notes != null) ...[
                 const SizedBox(height: 12),
@@ -820,9 +907,26 @@ class _TrainerDashboardPageState extends State<TrainerDashboardPage> with Single
     );
   }
 
-  void _duplicateWorkout(TrainingModel training) {
+  void _duplicateWorkout(TrainingModel training) async {
+    final duplicated = TrainingModel(
+      id: const Uuid().v4(),
+      name: training.name + " (Copy)",
+      description: training.description,
+      traineeId: training.traineeId,
+      trainerId: training.trainerId,
+      exercises: training.exercises,
+      scheduledDate: DateTime.now().add(const Duration(days: 1)),
+      difficulty: training.difficulty,
+      estimatedDuration: training.estimatedDuration,
+      category: training.category,
+      notes: training.notes,
+    );
+    await TrainingService().createTraining(duplicated);
+    setState(() {
+      _trainings.add(duplicated);
+    });
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Duplicating "${training.name}" - feature coming soon!')),
+      SnackBar(content: Text('Workout duplicated as "${duplicated.name}"')),
     );
   }
 

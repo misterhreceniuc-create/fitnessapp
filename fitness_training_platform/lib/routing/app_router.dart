@@ -29,6 +29,5 @@ class AppRouter {
         builder: (context, state) => const TraineeDashboardPage(),
       ),
     ],
-    // Simplified - no complex redirect logic for now
   );
 }

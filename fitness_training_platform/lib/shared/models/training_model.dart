@@ -1,4 +1,6 @@
+
 import 'package:uuid/uuid.dart';
+import '../../features/workout/data/exercise_model.dart';
 
 class TrainingModel {
   final String id;
@@ -26,50 +28,10 @@ class TrainingModel {
     this.isCompleted = false,
     this.completedAt,
     this.difficulty = 'beginner',
-    this.estimatedDuration = 30,
+    this.estimatedDuration = 60,
     this.category = 'strength',
     this.notes,
   });
-
-  factory TrainingModel.fromJson(Map<String, dynamic> json) {
-    return TrainingModel(
-      id: json['id'],
-      name: json['name'],
-      description: json['description'],
-      traineeId: json['traineeId'],
-      trainerId: json['trainerId'],
-      exercises: (json['exercises'] as List)
-          .map((e) => ExerciseModel.fromJson(e))
-          .toList(),
-      scheduledDate: DateTime.parse(json['scheduledDate']),
-      isCompleted: json['isCompleted'] ?? false,
-      completedAt: json['completedAt'] != null
-          ? DateTime.parse(json['completedAt'])
-          : null,
-      difficulty: json['difficulty'] ?? 'beginner',
-      estimatedDuration: json['estimatedDuration'] ?? 30,
-      category: json['category'] ?? 'strength',
-      notes: json['notes'],
-    );
-  }
-
-  Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'name': name,
-      'description': description,
-      'traineeId': traineeId,
-      'trainerId': trainerId,
-      'exercises': exercises.map((e) => e.toJson()).toList(),
-      'scheduledDate': scheduledDate.toIso8601String(),
-      'isCompleted': isCompleted,
-      'completedAt': completedAt?.toIso8601String(),
-      'difficulty': difficulty,
-      'estimatedDuration': estimatedDuration,
-      'category': category,
-      'notes': notes,
-    };
-  }
 
   TrainingModel copyWith({
     String? id,
@@ -114,6 +76,7 @@ class ExerciseModel {
   final bool isCompleted;
   final double? actualWeight;
   final int? actualReps;
+  final List<ActualSet> actualSets; // Each set: ActualSet
   final String category; // strength, cardio, flexibility
   final String targetMuscle; // chest, legs, back, etc.
   final String equipment; // barbell, dumbbell, bodyweight, etc.
@@ -130,12 +93,13 @@ class ExerciseModel {
     this.isCompleted = false,
     this.actualWeight,
     this.actualReps,
+    List<ActualSet>? actualSets,
     this.category = 'strength',
     this.targetMuscle = 'general',
     this.equipment = 'bodyweight',
     this.instructions = '',
     this.restTimeSeconds = 60,
-  });
+  }) : actualSets = actualSets ?? [];
 
   factory ExerciseModel.fromJson(Map<String, dynamic> json) {
     return ExerciseModel(
@@ -143,11 +107,14 @@ class ExerciseModel {
       name: json['name'],
       sets: json['sets'],
       reps: json['reps'],
-      weight: json['weight']?.toDouble(),
+      weight: json['weight'] != null ? (json['weight'] as num).toDouble() : null,
       notes: json['notes'],
       isCompleted: json['isCompleted'] ?? false,
-      actualWeight: json['actualWeight']?.toDouble(),
+      actualWeight: json['actualWeight'] != null ? (json['actualWeight'] as num).toDouble() : null,
       actualReps: json['actualReps'],
+      actualSets: json['actualSets'] != null
+          ? (json['actualSets'] as List).map((e) => ActualSet.fromJson(e)).toList()
+          : [],
       category: json['category'] ?? 'strength',
       targetMuscle: json['targetMuscle'] ?? 'general',
       equipment: json['equipment'] ?? 'bodyweight',
@@ -167,6 +134,7 @@ class ExerciseModel {
       'isCompleted': isCompleted,
       'actualWeight': actualWeight,
       'actualReps': actualReps,
+      'actualSets': actualSets.map((e) => e.toJson()).toList(),
       'category': category,
       'targetMuscle': targetMuscle,
       'equipment': equipment,
@@ -180,6 +148,7 @@ class ExerciseModel {
     double? actualWeight,
     int? actualReps,
     String? notes,
+    List<ActualSet>? actualSets,
   }) {
     return ExerciseModel(
       id: id,
@@ -191,6 +160,7 @@ class ExerciseModel {
       isCompleted: isCompleted ?? this.isCompleted,
       actualWeight: actualWeight ?? this.actualWeight,
       actualReps: actualReps ?? this.actualReps,
+      actualSets: actualSets ?? this.actualSets,
       category: category,
       targetMuscle: targetMuscle,
       equipment: equipment,
