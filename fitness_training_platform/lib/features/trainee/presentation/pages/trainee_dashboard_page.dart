@@ -3,8 +3,6 @@ import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../shared/providers/auth_provider.dart';
 import '../../../../shared/models/training_model.dart';
-import '../../../workout/data/exercise_model.dart';
-import '../../../../shared/models/nutrition_model.dart';
 import '../../../../shared/services/training_service.dart';
 import '../../../../shared/services/nutrition_service.dart';
 import '../../../../core/dependency_injection/injection_container.dart';
@@ -24,7 +22,6 @@ class _TraineeDashboardPageState extends State<TraineeDashboardPage> with Single
   
   late TabController _tabController;
   List<TrainingModel> _trainings = [];
-  List<NutritionEntryModel> _nutritionEntries = [];
   bool _isLoading = true;
 
   @override
@@ -57,15 +54,9 @@ class _TraineeDashboardPageState extends State<TraineeDashboardPage> with Single
           print('  Assigned to trainee ID: ${training.traineeId}');
           print('  Scheduled: ${training.scheduledDate}');
         }
-        
-        final nutritionEntries = await _nutritionService.getNutritionEntries(
-          currentUser.id,
-          DateTime.now(),
-        );
-        
+
         setState(() {
           _trainings = trainings;
-          _nutritionEntries = nutritionEntries;
           _isLoading = false;
         });
       } catch (e) {
@@ -181,13 +172,15 @@ class _TraineeDashboardPageState extends State<TraineeDashboardPage> with Single
                             
                             final trainings = await _trainingService.getTrainingsForTrainee(currentUser!.id);
                             print('Trainings found: ${trainings.length}');
-                            
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('Debug: Found ${trainings.length} workouts for user ${currentUser.id}'),
-                                backgroundColor: trainings.length > 0 ? Colors.green : Colors.red,
-                              ),
-                            );
+
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Debug: Found ${trainings.length} workouts for user ${currentUser.id}'),
+                                  backgroundColor: trainings.length > 0 ? Colors.green : Colors.red,
+                                ),
+                              );
+                            }
                             
                             setState(() {
                               _trainings = trainings;
@@ -313,7 +306,7 @@ class _TraineeDashboardPageState extends State<TraineeDashboardPage> with Single
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
               decoration: BoxDecoration(
-                color: _getDifficultyColor(training.difficulty).withOpacity(0.1),
+                color: _getDifficultyColor(training.difficulty).withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Text(
@@ -742,10 +735,12 @@ class _TraineeDashboardPageState extends State<TraineeDashboardPage> with Single
             child: const Text('Cancel'),
           ),
           ElevatedButton(
-            onPressed: () {
+            onPressed: () async {
               Navigator.pop(context);
-              context.read<AuthProvider>().logout();
-              context.go(RouteNames.login);
+              await context.read<AuthProvider>().logout();
+              if (mounted) {
+                context.go(RouteNames.login);
+              }
             },
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
             child: const Text('Logout'),

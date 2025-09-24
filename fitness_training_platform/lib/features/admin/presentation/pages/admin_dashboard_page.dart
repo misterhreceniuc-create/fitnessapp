@@ -119,7 +119,6 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
   }
 
   Widget _buildStatsCards() {
-    final adminCount = _users.where((u) => u.role == UserRole.admin).length;
     final trainerCount = _users.where((u) => u.role == UserRole.trainer).length;
     final traineeCount = _users.where((u) => u.role == UserRole.trainee).length;
 
@@ -181,7 +180,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                   decoration: BoxDecoration(
-                    color: _getRoleColor(user.role).withOpacity(0.1),
+                    color: _getRoleColor(user.role).withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
@@ -444,10 +443,12 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
             child: const Text('Cancel'),
           ),
           ElevatedButton(
-            onPressed: () {
+            onPressed: () async {
               Navigator.pop(context);
-              context.read<AuthProvider>().logout();
-              context.go(RouteNames.login);
+              await context.read<AuthProvider>().logout();
+              if (mounted) {
+                context.go(RouteNames.login);
+              }
             },
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
             child: const Text('Logout'),

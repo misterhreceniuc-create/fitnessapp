@@ -16,6 +16,10 @@ class TrainingModel {
   final int estimatedDuration; // minutes
   final String category; // strength, cardio, flexibility, etc.
   final String? notes;
+  // Recurrence fields
+  final String? recurrenceGroupId; // Links related recurring workouts
+  final int? recurrenceIndex; // Position in series (0, 1, 2...)
+  final int? totalRecurrences; // Total number in series
 
   TrainingModel({
     required this.id,
@@ -31,6 +35,9 @@ class TrainingModel {
     this.estimatedDuration = 60,
     this.category = 'strength',
     this.notes,
+    this.recurrenceGroupId,
+    this.recurrenceIndex,
+    this.totalRecurrences,
   });
 
   TrainingModel copyWith({
@@ -47,6 +54,9 @@ class TrainingModel {
     int? estimatedDuration,
     String? category,
     String? notes,
+    String? recurrenceGroupId,
+    int? recurrenceIndex,
+    int? totalRecurrences,
   }) {
     return TrainingModel(
       id: id ?? this.id,
@@ -62,7 +72,18 @@ class TrainingModel {
       estimatedDuration: estimatedDuration ?? this.estimatedDuration,
       category: category ?? this.category,
       notes: notes ?? this.notes,
+      recurrenceGroupId: recurrenceGroupId ?? this.recurrenceGroupId,
+      recurrenceIndex: recurrenceIndex ?? this.recurrenceIndex,
+      totalRecurrences: totalRecurrences ?? this.totalRecurrences,
     );
+  }
+
+  // Helper methods for recurrence
+  bool get isRecurring => recurrenceGroupId != null;
+
+  String get recurrenceDisplayText {
+    if (!isRecurring) return '';
+    return '${(recurrenceIndex ?? 0) + 1} of ${totalRecurrences ?? 1}';
   }
 }
 
@@ -180,6 +201,9 @@ class ExerciseTemplate {
   final String instructions;
   final String difficultyLevel;
   final List<String> tips;
+  final String? videoUrl;
+  final String? createdBy; // trainer ID who created this custom exercise
+  final bool isCustom;
 
   ExerciseTemplate({
     required this.id,
@@ -190,6 +214,9 @@ class ExerciseTemplate {
     required this.instructions,
     required this.difficultyLevel,
     this.tips = const [],
+    this.videoUrl,
+    this.createdBy,
+    this.isCustom = false,
   });
 
   ExerciseModel toExerciseModel({

@@ -1,22 +1,28 @@
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
+import 'package:provider/provider.dart';
 import '../../../../shared/models/training_model.dart';
+import '../../../../shared/models/training_template_model.dart';
 import '../../../../shared/models/user_model.dart';
 import '../../../../shared/services/exercise_library_service.dart';
 import '../../../../shared/services/training_service.dart';
 import '../../../../shared/widgets/common/custom_button.dart';
 import '../../../../shared/widgets/common/custom_text_field.dart';
+import '../../../../shared/providers/auth_provider.dart';
+import 'custom_exercise_dialog.dart';
 
 class WorkoutCreationWizard extends StatefulWidget {
   final List<UserModel> trainees;
   final Function(TrainingModel) onWorkoutCreated;
   final TrainingModel? initialWorkout;
+  final WorkoutTemplate? initialTemplate;
 
   const WorkoutCreationWizard({
     super.key,
     required this.trainees,
     required this.onWorkoutCreated,
     this.initialWorkout,
+    this.initialTemplate,
   });
 
   @override
@@ -79,6 +85,23 @@ class _WorkoutCreationWizardState extends State<WorkoutCreationWizard> {
         orElse: () => widget.trainees.first,
       );
       _selectedTrainees = [trainee];
+    } else if (widget.initialTemplate != null) {
+      // Initialize from template
+      final template = widget.initialTemplate!;
+      _nameController.text = template.name;
+      _descriptionController.text = template.description;
+      _notesController.text = template.notes ?? '';
+      _difficulty = template.difficulty;
+      _estimatedDuration = template.estimatedDuration;
+      _category = template.category;
+      // Convert template exercises to workout exercises
+      _selectedExercises = template.exercises.map((templateExercise) =>
+        templateExercise.toExerciseModel(
+          sets: 3, // Default values
+          reps: 10,
+          restTimeSeconds: 60,
+        )
+      ).toList();
     } else if (widget.trainees.length == 1) {
       _selectedTrainees = [widget.trainees.first];
     }
@@ -145,14 +168,15 @@ class _WorkoutCreationWizardState extends State<WorkoutCreationWizard> {
       child: Column(
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                'Create Workout',
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                    ),
+              Expanded(
+                child: Text(
+                  'Create Workout',
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                ),
               ),
               IconButton(
                 onPressed: () => Navigator.pop(context),
@@ -200,7 +224,7 @@ class _WorkoutCreationWizardState extends State<WorkoutCreationWizard> {
                 labelText: 'Category',
                 border: OutlineInputBorder(),
               ),
-              value: _category,
+              initialValue: _category,
               items: ['strength', 'cardio', 'flexibility', 'sports', 'rehabilitation']
                   .map((category) => DropdownMenuItem(
                         value: category,
@@ -219,7 +243,7 @@ class _WorkoutCreationWizardState extends State<WorkoutCreationWizard> {
                 labelText: 'Difficulty Level',
                 border: OutlineInputBorder(),
               ),
-              value: _difficulty,
+              initialValue: _difficulty,
               items: ['beginner', 'intermediate', 'advanced']
                   .map((difficulty) => DropdownMenuItem(
                         value: difficulty,
@@ -268,7 +292,7 @@ class _WorkoutCreationWizardState extends State<WorkoutCreationWizard> {
                         labelText: 'Recurrence',
                         border: OutlineInputBorder(),
                       ),
-                      value: _recurrenceFrequency,
+                      initialValue: _recurrenceFrequency,
                       items: ['None', 'Daily', 'Weekly', 'Monthly']
                           .map((freq) => DropdownMenuItem(
                                 value: freq,
@@ -293,7 +317,7 @@ class _WorkoutCreationWizardState extends State<WorkoutCreationWizard> {
                           labelText: 'Repeat for (days)',
                           border: OutlineInputBorder(),
                         ),
-                        value: _recurrenceDayCount,
+                        initialValue: _recurrenceDayCount,
                         items: [1,2,3,4,5,6,7]
                             .map((day) => DropdownMenuItem(
                                   value: day,
@@ -349,7 +373,7 @@ class _WorkoutCreationWizardState extends State<WorkoutCreationWizard> {
                 final trainee = widget.trainees[index];
                 final isSelected = _selectedTrainees.any((t) => t.id == trainee.id);
                 return Card(
-                  color: isSelected ? Theme.of(context).primaryColor.withOpacity(0.1) : null,
+                  color: isSelected ? Theme.of(context).primaryColor.withValues(alpha: 0.1) : null,
                   child: ListTile(
                     leading: CircleAvatar(
                       backgroundColor: isSelected 
@@ -394,19 +418,106 @@ class _WorkoutCreationWizardState extends State<WorkoutCreationWizard> {
       padding: const EdgeInsets.all(20),
       child: Column(
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Add Exercises (${_selectedExercises.length})',
-                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-              ElevatedButton.icon(
-                onPressed: _showExerciseLibrary,
-                icon: const Icon(Icons.add),
-                label: const Text('Add Exercise'),
-              ),
-            ],
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final isVeryNarrow = constraints.maxWidth < 320;
+              final isNarrow = constraints.maxWidth < 400;
+
+              if (isVeryNarrow) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Add Exercises (${_selectedExercises.length})',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed: _showExerciseLibrary,
+                            icon: const Icon(Icons.add, size: 16),
+                            label: const Text('Add', style: TextStyle(fontSize: 12)),
+                            style: ElevatedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: _showCustomExerciseDialog,
+                            icon: const Icon(Icons.fitness_center, size: 16),
+                            label: const Text('Custom', style: TextStyle(fontSize: 12)),
+                            style: OutlinedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                );
+              }
+
+              return Column(
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Add Exercises (${_selectedExercises.length})',
+                          style: TextStyle(
+                            fontSize: isNarrow ? 16 : 18,
+                            fontWeight: FontWeight.bold
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      isNarrow
+                        ? IconButton(
+                            onPressed: _showExerciseLibrary,
+                            icon: const Icon(Icons.add),
+                            tooltip: 'Add Exercise',
+                          )
+                        : ElevatedButton.icon(
+                            onPressed: _showExerciseLibrary,
+                            icon: const Icon(Icons.add, size: 18),
+                            label: const Text('Add Exercise', style: TextStyle(fontSize: 14)),
+                            style: ElevatedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            ),
+                          ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      const Spacer(),
+                      isNarrow
+                        ? IconButton(
+                            onPressed: _showCustomExerciseDialog,
+                            icon: const Icon(Icons.fitness_center),
+                            tooltip: 'Create Custom Exercise',
+                          )
+                        : OutlinedButton.icon(
+                            onPressed: _showCustomExerciseDialog,
+                            icon: const Icon(Icons.fitness_center, size: 18),
+                            label: const Text('Create Custom', style: TextStyle(fontSize: 14)),
+                            style: OutlinedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            ),
+                          ),
+                    ],
+                  ),
+                ],
+              );
+            },
           ),
           const SizedBox(height: 16),
           Expanded(
@@ -488,6 +599,7 @@ class _WorkoutCreationWizardState extends State<WorkoutCreationWizard> {
               'Difficulty: ${_difficulty.toUpperCase()}',
               'Duration: $_estimatedDuration minutes',
               'Scheduled: ${_scheduledDate.toString().split(' ')[0]}',
+              'Recurrence: ${_getRecurrenceDescription()}',
             ]),
             const SizedBox(height: 16),
             _buildReviewCard('Assigned To', [
@@ -505,6 +617,44 @@ class _WorkoutCreationWizardState extends State<WorkoutCreationWizard> {
               controller: _notesController,
               hint: 'Any special instructions for the trainee...',
             ),
+            const SizedBox(height: 16),
+            if (_recurrenceFrequency != 'None')
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.blue.shade200),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.info, color: Colors.blue.shade600, size: 20),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Recurrence Summary',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.blue.shade600,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'This will create ${_getTotalWorkoutsCount()} workout${_getTotalWorkoutsCount() > 1 ? 's' : ''} total',
+                      style: TextStyle(color: Colors.blue.shade700),
+                    ),
+                    Text(
+                      '${_selectedTrainees.length} trainee${_selectedTrainees.length > 1 ? 's' : ''} × ${_getRecurrenceInstances()} occurrence${_getRecurrenceInstances() > 1 ? 's' : ''} each',
+                      style: TextStyle(color: Colors.blue.shade600, fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
           ],
         ),
       ),
@@ -536,32 +686,41 @@ class _WorkoutCreationWizardState extends State<WorkoutCreationWizard> {
   Widget _buildNavigationButtons() {
     return Container(
       padding: const EdgeInsets.all(20),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          if (_currentPage > 0)
-            CustomButton(
-              text: 'Previous',
-              onPressed: _previousPage,
-              isOutlined: true,
-              icon: Icons.arrow_back,
-            )
-          else
-            const SizedBox(),
-          
-          if (_currentPage < _totalPages - 1)
-            CustomButton(
-              text: 'Next',
-              onPressed: _canProceedToNext() ? _nextPage : () {},
-              icon: Icons.arrow_forward,
-            )
-          else
-            CustomButton(
-              text: 'Create Workout',
-              onPressed: _canCreateWorkout() ? _createWorkout : () {},
-              icon: Icons.check,
-            ),
-        ],
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isNarrow = constraints.maxWidth < 400;
+          return Row(
+            children: [
+              if (_currentPage > 0)
+                Expanded(
+                  child: CustomButton(
+                    text: isNarrow ? 'Prev' : 'Previous',
+                    onPressed: _previousPage,
+                    isOutlined: true,
+                    icon: Icons.arrow_back,
+                  ),
+                )
+              else
+                const Expanded(child: SizedBox()),
+
+              const SizedBox(width: 12),
+
+              Expanded(
+                child: _currentPage < _totalPages - 1
+                  ? CustomButton(
+                      text: 'Next',
+                      onPressed: _canProceedToNext() ? _nextPage : () {},
+                      icon: Icons.arrow_forward,
+                    )
+                  : CustomButton(
+                      text: isNarrow ? 'Create' : 'Create Workout',
+                      onPressed: _canCreateWorkout() ? _createWorkout : () {},
+                      icon: Icons.check,
+                    ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -605,6 +764,35 @@ class _WorkoutCreationWizardState extends State<WorkoutCreationWizard> {
            _selectedExercises.isNotEmpty;
   }
 
+  String _getRecurrenceDescription() {
+    switch (_recurrenceFrequency) {
+      case 'Daily':
+        return 'Daily for $_recurrenceDayCount day${_recurrenceDayCount > 1 ? 's' : ''}';
+      case 'Weekly':
+        return 'Weekly for $_recurrenceCount week${_recurrenceCount > 1 ? 's' : ''}';
+      case 'Monthly':
+        return 'Monthly for $_recurrenceCount month${_recurrenceCount > 1 ? 's' : ''}';
+      default:
+        return 'None (single workout)';
+    }
+  }
+
+  int _getRecurrenceInstances() {
+    switch (_recurrenceFrequency) {
+      case 'Daily':
+        return _recurrenceDayCount;
+      case 'Weekly':
+      case 'Monthly':
+        return _recurrenceCount;
+      default:
+        return 1;
+    }
+  }
+
+  int _getTotalWorkoutsCount() {
+    return _selectedTrainees.length * _getRecurrenceInstances();
+  }
+
   // Action methods
   void _selectDate() async {
     final date = await showDatePicker(
@@ -634,7 +822,7 @@ class _WorkoutCreationWizardState extends State<WorkoutCreationWizard> {
 
   void _showExerciseConfigDialog(ExerciseTemplate template) {
     Navigator.pop(context); // Close exercise library dialog
-    
+
     showDialog(
       context: context,
       builder: (context) => _ExerciseConfigDialog(
@@ -646,6 +834,23 @@ class _WorkoutCreationWizardState extends State<WorkoutCreationWizard> {
         },
       ),
     );
+  }
+
+  void _showCustomExerciseDialog() async {
+    final currentUser = context.read<AuthProvider>().currentUser;
+    if (currentUser == null) return;
+
+    final result = await showDialog<ExerciseTemplate>(
+      context: context,
+      builder: (context) => CustomExerciseDialog(
+        trainerId: currentUser.id,
+      ),
+    );
+
+    if (result != null) {
+      // Show exercise configuration dialog for the newly created custom exercise
+      _showExerciseConfigDialog(result);
+    }
   }
 
   void _editExercise(int index) {
@@ -671,55 +876,90 @@ class _WorkoutCreationWizardState extends State<WorkoutCreationWizard> {
 
   void _createWorkout() {
     int totalCreated = 0;
+
+    // Determine recurrence parameters
     Duration recurrenceStep;
+    int recurrenceInstances;
+
     switch (_recurrenceFrequency) {
       case 'Daily':
         recurrenceStep = const Duration(days: 1);
+        recurrenceInstances = _recurrenceDayCount;
         break;
       case 'Weekly':
         recurrenceStep = const Duration(days: 7);
+        recurrenceInstances = _recurrenceCount;
         break;
       case 'Monthly':
         recurrenceStep = const Duration(days: 30);
+        recurrenceInstances = _recurrenceCount;
         break;
       default:
         recurrenceStep = Duration.zero;
+        recurrenceInstances = 1;
     }
 
-    for (final trainee in _selectedTrainees) {
-      for (int i = 0; i < (_recurrenceFrequency == 'None' ? 1 : _recurrenceCount); i++) {
-        final scheduledDate = recurrenceStep == Duration.zero
-            ? _scheduledDate
-            : _scheduledDate.add(recurrenceStep * i);
-        final traineeWorkout = TrainingModel(
-          id: widget.initialWorkout?.id ?? const Uuid().v4(),
-          name: _nameController.text,
-          description: _descriptionController.text,
-          exercises: _selectedExercises,
-          traineeId: trainee.id,
-          trainerId: widget.trainees.isNotEmpty ? widget.trainees.first.id : '', // fallback, update as needed
-          scheduledDate: scheduledDate,
-          difficulty: _difficulty,
-          estimatedDuration: _estimatedDuration,
-          category: _category,
-          notes: _notesController.text.isNotEmpty ? _notesController.text : null,
-        );
-        if (widget.initialWorkout != null && i == 0) {
-          // Editing: update existing only for first occurrence
-          widget.onWorkoutCreated(traineeWorkout);
-        } else {
-          // Creating: add new
+    // Handle editing vs creating
+    if (widget.initialWorkout != null) {
+      // Editing mode: only update the existing workout
+      final updatedWorkout = TrainingModel(
+        id: widget.initialWorkout!.id,
+        name: _nameController.text,
+        description: _descriptionController.text,
+        exercises: _selectedExercises,
+        traineeId: _selectedTrainees.first.id,
+        trainerId: widget.initialWorkout!.trainerId,
+        scheduledDate: _scheduledDate,
+        difficulty: _difficulty,
+        estimatedDuration: _estimatedDuration,
+        category: _category,
+        notes: _notesController.text.isNotEmpty ? _notesController.text : null,
+        isCompleted: widget.initialWorkout!.isCompleted,
+        completedAt: widget.initialWorkout!.completedAt,
+      );
+      widget.onWorkoutCreated(updatedWorkout);
+      totalCreated = 1;
+    } else {
+      // Creating mode: create multiple instances based on recurrence
+      for (final trainee in _selectedTrainees) {
+        // Generate a unique group ID for this trainee's recurring series
+        final recurrenceGroupId = recurrenceInstances > 1 ? const Uuid().v4() : null;
+
+        for (int i = 0; i < recurrenceInstances; i++) {
+          final scheduledDate = recurrenceStep == Duration.zero
+              ? _scheduledDate
+              : _scheduledDate.add(recurrenceStep * i);
+
+          final traineeWorkout = TrainingModel(
+            id: const Uuid().v4(), // Generate unique ID for each instance
+            name: _nameController.text,
+            description: _descriptionController.text,
+            exercises: _selectedExercises,
+            traineeId: trainee.id,
+            trainerId: widget.trainees.isNotEmpty ? widget.trainees.first.id : '', // fallback, update as needed
+            scheduledDate: scheduledDate,
+            difficulty: _difficulty,
+            estimatedDuration: _estimatedDuration,
+            category: _category,
+            notes: _notesController.text.isNotEmpty ? _notesController.text : null,
+            recurrenceGroupId: recurrenceGroupId,
+            recurrenceIndex: recurrenceInstances > 1 ? i : null,
+            totalRecurrences: recurrenceInstances > 1 ? recurrenceInstances : null,
+          );
+
           TrainingService().createTraining(traineeWorkout);
           widget.onWorkoutCreated(traineeWorkout);
+          totalCreated++;
         }
-        totalCreated++;
       }
     }
+
     Navigator.pop(context);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(widget.initialWorkout != null
-            ? 'Workout updated!' : 'Workout created for $totalCreated workouts! 🎉'),
+            ? 'Workout updated!'
+            : 'Created $totalCreated workout${totalCreated > 1 ? 's' : ''} successfully! 🎉'),
         backgroundColor: Colors.green,
       ),
     );
@@ -829,7 +1069,7 @@ class _ExerciseLibraryDialogState extends State<_ExerciseLibraryDialog> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                   decoration: BoxDecoration(
-                    color: _getDifficultyColor(exercise.difficultyLevel).withOpacity(0.1),
+                    color: _getDifficultyColor(exercise.difficultyLevel).withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(

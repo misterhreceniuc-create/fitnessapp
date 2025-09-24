@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../workout_model.dart';
-import '../exercise_model.dart';
 
 class WorkoutDetailScreen extends StatelessWidget {
   final Workout workout;

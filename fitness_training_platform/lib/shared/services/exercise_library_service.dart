@@ -191,4 +191,30 @@ class ExerciseLibraryService {
         exercise.category.toLowerCase().contains(lowerQuery)
     ).toList();
   }
+
+  void addCustomExercise(ExerciseTemplate exercise) {
+    _exercises.add(exercise);
+  }
+
+  List<ExerciseTemplate> getCustomExercisesByTrainer(String trainerId) {
+    return _exercises.where((exercise) =>
+        exercise.isCustom && exercise.createdBy == trainerId).toList();
+  }
+
+  List<ExerciseTemplate> getAllCustomExercises() {
+    return _exercises.where((exercise) => exercise.isCustom).toList();
+  }
+
+  bool deleteCustomExercise(String exerciseId, String trainerId) {
+    final index = _exercises.indexWhere((exercise) =>
+        exercise.id == exerciseId &&
+        exercise.isCustom &&
+        exercise.createdBy == trainerId);
+
+    if (index != -1) {
+      _exercises.removeAt(index);
+      return true;
+    }
+    return false;
+  }
 }

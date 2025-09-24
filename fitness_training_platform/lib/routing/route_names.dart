@@ -4,4 +4,5 @@ class RouteNames {
   static const String adminDashboard = '/admin';
   static const String trainerDashboard = '/trainer';
   static const String traineeDashboard = '/trainee';
+  static const String templates = '/templates';
 }

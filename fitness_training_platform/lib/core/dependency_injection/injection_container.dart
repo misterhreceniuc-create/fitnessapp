@@ -4,6 +4,7 @@ import '../../shared/services/user_service.dart';
 import '../../shared/services/training_service.dart';
 import '../../shared/services/nutrition_service.dart';
 import '../../shared/services/exercise_library_service.dart';
+import '../../shared/services/template_service.dart';
 
 class ServiceLocator {
   static final _instance = ServiceLocator._internal();
@@ -36,4 +37,5 @@ Future<void> setupDependencies() async {
   sl.register<TrainingService>(TrainingService());
   sl.register<NutritionService>(NutritionService());
   sl.register<ExerciseLibraryService>(ExerciseLibraryService());
+  sl.register<TemplateService>(TemplateService());
 }

@@ -74,7 +74,6 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
   }
 
   Widget _buildStatsCards() {
-    final adminCount = _users.where((u) => u.role == UserRole.admin).length;
     final trainerCount = _users.where((u) => u.role == UserRole.trainer).length;
     final traineeCount = _users.where((u) => u.role == UserRole.trainee).length;
 

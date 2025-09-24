@@ -7,7 +7,6 @@ import '../../core/dependency_injection/injection_container.dart';
 class AuthService {
   final SharedPreferences _prefs = sl.get<SharedPreferences>();
   static const String _userKey = 'current_user';
-  static const String _usersKey = 'all_users';
   
   // Mock users for demonstration - ADD MIKE JOHNSON HERE
   final List<UserModel> _mockUsers = [

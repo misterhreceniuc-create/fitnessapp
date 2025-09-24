@@ -5,11 +5,16 @@ import 'package:uuid/uuid.dart';
 import '../../../../shared/providers/auth_provider.dart';
 import '../../../../shared/models/user_model.dart';
 import '../../../../shared/models/training_model.dart';
+import '../../../../shared/models/training_template_model.dart';
 import '../../../../shared/services/user_service.dart';
 import '../../../../shared/services/training_service.dart';
+import '../../../../shared/services/template_service.dart';
 import '../../../../core/dependency_injection/injection_container.dart';
 import '../../../../routing/route_names.dart';
 import '../widgets/workout_creation_wizard.dart';
+import '../widgets/workout_creation_mode_dialog.dart';
+import '../widgets/recurrence_edit_dialog.dart';
+import '../widgets/recurrence_deletion_dialog.dart';
 
 
 class TrainerDashboardPage extends StatefulWidget {
@@ -22,6 +27,7 @@ class TrainerDashboardPage extends StatefulWidget {
 class _TrainerDashboardPageState extends State<TrainerDashboardPage> with SingleTickerProviderStateMixin {
   final UserService _userService = sl.get<UserService>();
   final TrainingService _trainingService = sl.get<TrainingService>();
+  final TemplateService _templateService = sl.get<TemplateService>();
 
   late TabController _tabController;
   List<UserModel> _trainees = [];
@@ -31,41 +37,92 @@ class _TrainerDashboardPageState extends State<TrainerDashboardPage> with Single
   // ...existing code...
 
   void _editWorkout(TrainingModel training) async {
+    // Check if this is a recurring workout
+    if (training.isRecurring) {
+      // Show recurrence edit dialog to choose scope
+      await showDialog(
+        context: context,
+        builder: (context) => RecurrenceEditDialog(
+          training: training,
+          onScopeSelected: (scope) {
+            Navigator.pop(context);
+            _showEditWorkoutDialog(training, scope);
+          },
+        ),
+      );
+    } else {
+      // Single workout, edit directly
+      _showEditWorkoutDialog(training, EditScope.single);
+    }
+  }
+
+  void _showEditWorkoutDialog(TrainingModel training, EditScope editScope) async {
     await showDialog(
       context: context,
       builder: (context) => WorkoutCreationWizard(
         trainees: _trainees,
         initialWorkout: training,
         onWorkoutCreated: (editedWorkout) async {
-          final updated = training.copyWith(
-            name: editedWorkout.name,
-            description: editedWorkout.description,
-            exercises: editedWorkout.exercises,
-            scheduledDate: editedWorkout.scheduledDate,
-            difficulty: editedWorkout.difficulty,
-            estimatedDuration: editedWorkout.estimatedDuration,
-            category: editedWorkout.category,
-            notes: editedWorkout.notes,
-            traineeId: editedWorkout.traineeId,
-          );
-          await TrainingService().updateTraining(updated);
-          setState(() {
-            final idx = _trainings.indexWhere((t) => t.id == training.id);
-            if (idx != -1) _trainings[idx] = updated;
-          });
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Workout "${updated.name}" updated')),
-          );
+          if (editScope == EditScope.single) {
+            // Update single workout
+            final updated = training.copyWith(
+              name: editedWorkout.name,
+              description: editedWorkout.description,
+              exercises: editedWorkout.exercises,
+              scheduledDate: editedWorkout.scheduledDate,
+              difficulty: editedWorkout.difficulty,
+              estimatedDuration: editedWorkout.estimatedDuration,
+              category: editedWorkout.category,
+              notes: editedWorkout.notes,
+              traineeId: editedWorkout.traineeId,
+            );
+            await _trainingService.updateTraining(updated);
+            setState(() {
+              final idx = _trainings.indexWhere((t) => t.id == training.id);
+              if (idx != -1) _trainings[idx] = updated;
+            });
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Workout "${updated.name}" updated')),
+              );
+            }
+          } else {
+            // Update all workouts in recurrence group
+            final templateTraining = training.copyWith(
+              name: editedWorkout.name,
+              description: editedWorkout.description,
+              exercises: editedWorkout.exercises,
+              difficulty: editedWorkout.difficulty,
+              estimatedDuration: editedWorkout.estimatedDuration,
+              category: editedWorkout.category,
+              notes: editedWorkout.notes,
+            );
+
+            final updatedTrainings = await _trainingService.updateRecurrenceGroup(
+              training.recurrenceGroupId!,
+              templateTraining,
+            );
+
+            setState(() {
+              for (final updatedTraining in updatedTrainings) {
+                final idx = _trainings.indexWhere((t) => t.id == updatedTraining.id);
+                if (idx != -1) _trainings[idx] = updatedTraining;
+              }
+            });
+
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Updated ${updatedTrainings.length} workouts in the series'),
+                ),
+              );
+            }
+          }
         },
       ),
     );
   }
 
-  UserModel _getUserById(String id) {
-    // Replace with your actual user lookup logic
-    // For now, just return a dummy user
-    return UserModel(id: id, name: 'Trainee', email: 'trainee@email.com', role: UserRole.trainee, createdAt: DateTime.now());
-  }
 
   @override
   void initState() {
@@ -131,6 +188,11 @@ class _TrainerDashboardPageState extends State<TrainerDashboardPage> with Single
               });
               _loadData();
             },
+          ),
+          IconButton(
+            icon: const Icon(Icons.library_books),
+            onPressed: _openTemplates,
+            tooltip: 'Templates',
           ),
           IconButton(
             icon: const Icon(Icons.notifications),
@@ -375,9 +437,38 @@ class _TrainerDashboardPageState extends State<TrainerDashboardPage> with Single
                               color: Colors.white,
                             ),
                           ),
-                          title: Text(
-                            training.name,
-                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          title: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  training.name,
+                                  style: const TextStyle(fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                              if (training.isRecurring)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.purple.shade100,
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.repeat, size: 12, color: Colors.purple.shade600),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        training.recurrenceDisplayText,
+                                        style: TextStyle(
+                                          color: Colors.purple.shade600,
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                            ],
                           ),
                           subtitle: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -391,7 +482,7 @@ class _TrainerDashboardPageState extends State<TrainerDashboardPage> with Single
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                                 decoration: BoxDecoration(
-                                  color: _getDifficultyColor(training.difficulty).withOpacity(0.1),
+                                  color: _getDifficultyColor(training.difficulty).withValues(alpha: 0.1),
                                   borderRadius: BorderRadius.circular(12),
                                 ),
                                 child: Text(
@@ -566,7 +657,11 @@ class _TrainerDashboardPageState extends State<TrainerDashboardPage> with Single
 
   // Action methods
   void _createNewWorkout() {
+    print('=== NEW WORKOUT BUTTON CLICKED ===');
+    print('Trainees count: ${_trainees.length}');
+
     if (_trainees.isEmpty) {
+      print('❌ No trainees available');
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('No trainees available. The system has mock trainees, but they may not be loaded.'),
@@ -576,55 +671,263 @@ class _TrainerDashboardPageState extends State<TrainerDashboardPage> with Single
       return;
     }
 
+    print('✅ Opening WorkoutCreationModeDialog');
+    try {
+      showDialog(
+        context: context,
+        builder: (context) => WorkoutCreationModeDialog(
+          onModeSelected: (mode, {selectedTemplate}) {
+            print('=== MODE SELECTED ===');
+            print('Mode: $mode');
+            print('Selected Template: ${selectedTemplate?.name ?? 'None'}');
+            _handleWorkoutCreation(mode, selectedTemplate: selectedTemplate);
+          },
+        ),
+      );
+    } catch (e) {
+      print('❌ Error opening dialog: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  void _handleWorkoutCreation(WorkoutCreationMode mode, {WorkoutTemplate? selectedTemplate}) {
+    print('=== HANDLE WORKOUT CREATION ===');
+    print('Mode: $mode');
+    print('Template: ${selectedTemplate?.name ?? 'None'}');
+
+    // Use Future.delayed to ensure the previous dialog is properly closed
+    Future.delayed(const Duration(milliseconds: 200), () {
+      if (mode == WorkoutCreationMode.fromScratch) {
+        print('Creating workout from scratch');
+        _showTraineeSelectionForNewWorkout();
+      } else if (mode == WorkoutCreationMode.fromTemplate && selectedTemplate != null) {
+        print('Creating workout from template: ${selectedTemplate.name}');
+        _showTraineeSelectionForTemplate(selectedTemplate);
+      } else {
+        print('❌ Invalid mode or missing template');
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Error: Invalid workout creation mode'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    });
+  }
+
+  void _showTraineeSelectionForNewWorkout() {
+    print('📋 Showing trainee selection dialog for new workout');
     showDialog(
       context: context,
-      builder: (context) => WorkoutCreationWizard(
-        trainees: _trainees,
-        onWorkoutCreated: (workout) async {
-          final currentUser = context.read<AuthProvider>().currentUser;
-          if (currentUser != null) {
-            try {
-              final newWorkout = workout.copyWith(trainerId: currentUser.id);
-              final createdWorkout = await _trainingService.createTraining(newWorkout);
-              
-              setState(() {
-                _trainings.add(createdWorkout);
-              });
-              
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Row(
-                    children: [
-                      const Icon(Icons.check_circle, color: Colors.white),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'Workout "${workout.name}" assigned to ${_getTraineeName(workout.traineeId)}!',
+      builder: (context) => AlertDialog(
+        title: const Text('Create New Workout'),
+        content: SizedBox(
+          width: 400,
+          height: 300,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Select a trainee to create a workout for:'),
+              const SizedBox(height: 16),
+              Expanded(
+                child: ListView.builder(
+                  itemCount: _trainees.length,
+                  itemBuilder: (context, index) {
+                    final trainee = _trainees[index];
+                    return Card(
+                      child: ListTile(
+                        leading: CircleAvatar(
+                          backgroundColor: Colors.green,
+                          child: Text(trainee.name[0]),
                         ),
+                        title: Text(trainee.name),
+                        subtitle: Text('ID: ${trainee.id}'),
+                        onTap: () {
+                          print('🎯 Trainee selected: ${trainee.name} (${trainee.id})');
+                          Navigator.pop(context);
+                          _createBasicWorkoutForTrainee(trainee);
+                        },
                       ),
-                    ],
-                  ),
-                  backgroundColor: Colors.green,
-                  duration: const Duration(seconds: 4),
-                  action: SnackBarAction(
-                    label: 'View',
-                    textColor: Colors.white,
-                    onPressed: () => _viewWorkoutDetails(createdWorkout),
-                  ),
+                    );
+                  },
                 ),
-              );
-            } catch (e) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Error creating workout: $e'),
-                  backgroundColor: Colors.red,
-                ),
-              );
-            }
-          }
-        },
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
       ),
     );
+  }
+
+  void _showTraineeSelectionForTemplate(WorkoutTemplate template) {
+    print('📋 Showing trainee selection dialog for template: ${template.name}');
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Use Template: ${template.name}'),
+        content: SizedBox(
+          width: 400,
+          height: 300,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Select a trainee to create this workout for:'),
+              const SizedBox(height: 16),
+              Expanded(
+                child: ListView.builder(
+                  itemCount: _trainees.length,
+                  itemBuilder: (context, index) {
+                    final trainee = _trainees[index];
+                    return Card(
+                      child: ListTile(
+                        leading: CircleAvatar(
+                          backgroundColor: Colors.blue,
+                          child: Text(trainee.name[0]),
+                        ),
+                        title: Text(trainee.name),
+                        subtitle: Text('ID: ${trainee.id}'),
+                        onTap: () {
+                          print('🎯 Trainee selected for template: ${trainee.name} (${trainee.id})');
+                          Navigator.pop(context);
+                          _createWorkoutFromTemplateForTrainee(template, trainee);
+                        },
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _createBasicWorkoutForTrainee(UserModel trainee) {
+    print('🎨 Opening WorkoutCreationWizard for: ${trainee.name}');
+
+    // Use the old WorkoutCreationWizard mechanism for "Create from scratch"
+    showDialog(
+      context: context,
+      builder: (context) {
+        print('🎨 Building WorkoutCreationWizard dialog');
+        return WorkoutCreationWizard(
+          trainees: [trainee], // Pre-select this trainee
+          onWorkoutCreated: (workout) async {
+            final currentUser = context.read<AuthProvider>().currentUser;
+            if (currentUser != null) {
+              try {
+                final newWorkout = workout.copyWith(trainerId: currentUser.id);
+                final createdWorkout = await _trainingService.createTraining(newWorkout);
+
+                setState(() {
+                  _trainings.add(createdWorkout);
+                });
+
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Row(
+                        children: [
+                          const Icon(Icons.check_circle, color: Colors.white),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text('Custom workout "${workout.name}" created for ${trainee.name}!'),
+                          ),
+                        ],
+                      ),
+                      backgroundColor: Colors.green,
+                      duration: const Duration(seconds: 4),
+                    ),
+                  );
+                }
+
+                print('✅ Custom workout created successfully: ${createdWorkout.id}');
+              } catch (e) {
+                print('❌ Error creating custom workout: $e');
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Error creating workout: $e'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              }
+            }
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _createWorkoutFromTemplateForTrainee(WorkoutTemplate template, UserModel trainee) async {
+    print('Creating workout from template: ${template.name} for ${trainee.name}');
+
+    final currentUser = context.read<AuthProvider>().currentUser;
+    if (currentUser == null) return;
+
+    try {
+      // Convert template to workout
+      final workout = template.toTrainingModel(
+        traineeId: trainee.id,
+        scheduledDate: DateTime.now().add(const Duration(days: 1)),
+      ).copyWith(trainerId: currentUser.id); // Ensure the current trainer is assigned
+
+      final createdWorkout = await _trainingService.createTraining(workout);
+
+      setState(() {
+        _trainings.add(createdWorkout);
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.check_circle, color: Colors.white),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text('Workout "${template.name}" created for ${trainee.name}!'),
+                ),
+              ],
+            ),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+
+      print('✅ Workout created successfully: ${createdWorkout.id}');
+
+    } catch (e) {
+      print('❌ Error creating workout: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error creating workout: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   // TEST WORKOUT METHOD - This creates a workout directly for Mike Johnson
@@ -681,14 +984,16 @@ class _TrainerDashboardPageState extends State<TrainerDashboardPage> with Single
       setState(() {
         _trainings.add(createdWorkout);
       });
-      
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('✅ Test workout created for Mike Johnson! Now login as Mike to see it.'),
-          backgroundColor: Colors.green,
-          duration: Duration(seconds: 5),
-        ),
-      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ Test workout created for Mike Johnson! Now login as Mike to see it.'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 5),
+          ),
+        );
+      }
       
       print('=== TEST WORKOUT CREATED ===');
       print('Workout: ${createdWorkout.name}');
@@ -696,12 +1001,14 @@ class _TrainerDashboardPageState extends State<TrainerDashboardPage> with Single
       print('Trainer: ${createdWorkout.trainerId}');
       print('Exercises: ${createdWorkout.exercises.length}');
     }).catchError((error) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('❌ Error creating test workout: $error'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Error creating test workout: $error'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     });
   }
 
@@ -719,8 +1026,23 @@ class _TrainerDashboardPageState extends State<TrainerDashboardPage> with Single
   }
 
   void _createWorkoutTemplate() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Create template feature - coming soon!')),
+    if (_trainees.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No trainees available. The system has mock trainees, but they may not be loaded.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    showDialog(
+      context: context,
+      builder: (context) => WorkoutCreationModeDialog(
+        onModeSelected: (mode, {selectedTemplate}) {
+          _handleWorkoutCreation(mode, selectedTemplate: selectedTemplate);
+        },
+      ),
     );
   }
 
@@ -799,39 +1121,48 @@ class _TrainerDashboardPageState extends State<TrainerDashboardPage> with Single
   }
 
   void _createWorkoutForTrainee(UserModel trainee) {
+    print('=== CREATE WORKOUT FOR TRAINEE BUTTON CLICKED ===');
+    print('Trainee: ${trainee.name} (${trainee.id})');
+
+    // Show workout creation mode dialog, but skip trainee selection
     showDialog(
       context: context,
-      builder: (context) => WorkoutCreationWizard(
-        trainees: [trainee], // Pre-select this trainee
-        onWorkoutCreated: (workout) async {
-          final currentUser = context.read<AuthProvider>().currentUser;
-          if (currentUser != null) {
-            try {
-              final newWorkout = workout.copyWith(trainerId: currentUser.id);
-              final createdWorkout = await _trainingService.createTraining(newWorkout);
-              
-              setState(() {
-                _trainings.add(createdWorkout);
-              });
-              
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Workout "${workout.name}" created for ${trainee.name}!'),
-                  backgroundColor: Colors.green,
-                ),
-              );
-            } catch (e) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Error: $e'),
-                  backgroundColor: Colors.red,
-                ),
-              );
-            }
-          }
+      builder: (context) => WorkoutCreationModeDialog(
+        onModeSelected: (mode, {selectedTemplate}) {
+          print('=== MODE SELECTED FOR TRAINEE ===');
+          print('Mode: $mode');
+          print('Template: ${selectedTemplate?.name ?? 'None'}');
+          print('Pre-selected trainee: ${trainee.name}');
+          _handleWorkoutCreationForTrainee(trainee, mode, selectedTemplate: selectedTemplate);
         },
       ),
     );
+  }
+
+  void _handleWorkoutCreationForTrainee(UserModel trainee, WorkoutCreationMode mode, {WorkoutTemplate? selectedTemplate}) {
+    print('=== HANDLE WORKOUT CREATION FOR TRAINEE ===');
+    print('Mode: $mode');
+    print('Template: ${selectedTemplate?.name ?? 'None'}');
+    print('Trainee: ${trainee.name} (${trainee.id})');
+
+    // Use Future.delayed to ensure the previous dialog is properly closed, then directly create workout
+    Future.delayed(const Duration(milliseconds: 200), () {
+      if (mode == WorkoutCreationMode.fromScratch) {
+        print('Creating workout from scratch for ${trainee.name}');
+        _createBasicWorkoutForTrainee(trainee);
+      } else if (mode == WorkoutCreationMode.fromTemplate && selectedTemplate != null) {
+        print('Creating workout from template: ${selectedTemplate.name} for ${trainee.name}');
+        _createWorkoutFromTemplateForTrainee(selectedTemplate, trainee);
+      } else {
+        print('❌ Invalid mode or missing template');
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Error: Invalid workout creation mode'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    });
   }
 
   void _viewWorkoutDetails(TrainingModel training) {
@@ -925,34 +1256,129 @@ class _TrainerDashboardPageState extends State<TrainerDashboardPage> with Single
     setState(() {
       _trainings.add(duplicated);
     });
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Workout duplicated as "${duplicated.name}"')),
-    );
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Workout duplicated as "${duplicated.name}"')),
+      );
+    }
   }
 
-  void _deleteWorkout(TrainingModel training) {
-    showDialog(
+  void _deleteWorkout(TrainingModel training) async {
+    // Check if this is a recurring workout
+    if (training.isRecurring) {
+      // Show recurrence deletion dialog to choose scope
+      await showDialog(
+        context: context,
+        builder: (context) => RecurrenceDeletionDialog(
+          training: training,
+          onScopeSelected: (scope) {
+            Navigator.pop(context);
+            _showDeleteConfirmationDialog(training, scope);
+          },
+        ),
+      );
+    } else {
+      // Single workout, delete directly
+      _showDeleteConfirmationDialog(training, DeletionScope.single);
+    }
+  }
+
+  void _showDeleteConfirmationDialog(TrainingModel training, DeletionScope deletionScope) async {
+    final isDeleteAll = deletionScope == DeletionScope.all;
+    final workoutCount = isDeleteAll ? training.totalRecurrences : 1;
+
+    await showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Delete Workout'),
-        content: Text('Are you sure you want to delete "${training.name}"?'),
+        title: Row(
+          children: [
+            Icon(Icons.warning, color: Colors.red.shade600),
+            const SizedBox(width: 8),
+            const Text('Confirm Deletion'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              isDeleteAll
+                ? 'Are you sure you want to delete all ${workoutCount} workouts in this recurring series?'
+                : 'Are you sure you want to delete "${training.name}"?',
+              style: const TextStyle(fontSize: 16),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.red.shade50,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.warning_outlined, color: Colors.red.shade600, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'This action cannot be undone.',
+                      style: TextStyle(
+                        color: Colors.red.shade700,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
           ElevatedButton(
-            onPressed: () {
+            onPressed: () async {
               Navigator.pop(context);
-              setState(() {
-                _trainings.removeWhere((t) => t.id == training.id);
-              });
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Workout "${training.name}" deleted'),
-                  backgroundColor: Colors.red,
-                ),
-              );
+
+              if (isDeleteAll) {
+                // Delete all workouts in recurrence group
+                final deletedIds = await _trainingService.deleteRecurrenceGroup(
+                  training.recurrenceGroupId!
+                );
+
+                setState(() {
+                  _trainings.removeWhere((t) => deletedIds.contains(t.id));
+                });
+
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Deleted ${deletedIds.length} workouts from the series'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              } else {
+                // Delete single workout
+                await _trainingService.deleteTraining(training.id);
+
+                setState(() {
+                  _trainings.removeWhere((t) => t.id == training.id);
+                });
+
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Workout "${training.name}" deleted'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              }
             },
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Delete'),
+            child: Text(isDeleteAll ? 'Delete All' : 'Delete'),
           ),
         ],
       ),
@@ -991,6 +1417,10 @@ class _TrainerDashboardPageState extends State<TrainerDashboardPage> with Single
     );
   }
 
+  void _openTemplates() {
+    context.go(RouteNames.templates);
+  }
+
   void _logout() {
     showDialog(
       context: context,
@@ -1000,10 +1430,12 @@ class _TrainerDashboardPageState extends State<TrainerDashboardPage> with Single
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
           ElevatedButton(
-            onPressed: () {
+            onPressed: () async {
               Navigator.pop(context);
-              context.read<AuthProvider>().logout();
-              context.go(RouteNames.login);
+              await context.read<AuthProvider>().logout();
+              if (mounted) {
+                context.go(RouteNames.login);
+              }
             },
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
             child: const Text('Logout'),

@@ -36,7 +36,7 @@ class _WorkoutSessionDialogState extends State<WorkoutSessionDialog> {
   // Track workout session state
   bool _workoutStarted = false;
   bool _workoutCompleted = false;
-  bool _isEditMode = false;
+  bool _isEditingResults = false;
 
   @override
   void initState() {
@@ -71,6 +71,34 @@ class _WorkoutSessionDialogState extends State<WorkoutSessionDialog> {
           TextEditingController(text: exercise.actualSets[j].kg.toString())
         );
       }
+    }
+  }
+
+  void _updateEditControllersForExercise(int exerciseIndex) {
+    final exercise = _exercises[exerciseIndex];
+    final exerciseId = exercise.id;
+    final currentActualSets = exercise.actualSets.length;
+    final currentControllers = _editRepsControllers[exerciseId]?.length ?? 0;
+
+    // If we need more controllers, add them
+    if (currentActualSets > currentControllers) {
+      for (int i = currentControllers; i < currentActualSets; i++) {
+        _editRepsControllers[exerciseId]!.add(
+          TextEditingController(text: exercise.actualSets[i].reps.toString())
+        );
+        _editKgControllers[exerciseId]!.add(
+          TextEditingController(text: exercise.actualSets[i].kg.toString())
+        );
+      }
+    }
+    // If we have too many controllers, dispose and remove the extras
+    else if (currentActualSets < currentControllers) {
+      for (int i = currentActualSets; i < currentControllers; i++) {
+        _editRepsControllers[exerciseId]![i].dispose();
+        _editKgControllers[exerciseId]![i].dispose();
+      }
+      _editRepsControllers[exerciseId] = _editRepsControllers[exerciseId]!.sublist(0, currentActualSets);
+      _editKgControllers[exerciseId] = _editKgControllers[exerciseId]!.sublist(0, currentActualSets);
     }
   }
 
@@ -143,7 +171,7 @@ class _WorkoutSessionDialogState extends State<WorkoutSessionDialog> {
     // Add the set data using your existing ActualSet class
     final newSet = ActualSet(reps: reps, kg: kg);
     final updatedSets = List<ActualSet>.from(_exercises[_currentExerciseIndex].actualSets);
-    
+
     if (updatedSets.length <= _currentSetIndex) {
       updatedSets.add(newSet);
     } else {
@@ -153,6 +181,9 @@ class _WorkoutSessionDialogState extends State<WorkoutSessionDialog> {
     _exercises[_currentExerciseIndex] = _exercises[_currentExerciseIndex].copyWith(
       actualSets: updatedSets,
     );
+
+    // Update edit controllers to match the new actualSets
+    _updateEditControllersForExercise(_currentExerciseIndex);
 
     // Clear input fields
     _repsController.clear();
@@ -223,6 +254,11 @@ class _WorkoutSessionDialogState extends State<WorkoutSessionDialog> {
   }
 
   void _completeWorkout() {
+    // Update all edit controllers to match final actualSets
+    for (int i = 0; i < _exercises.length; i++) {
+      _updateEditControllersForExercise(i);
+    }
+
     setState(() {
       _workoutCompleted = true;
       _isResting = false;
@@ -248,98 +284,83 @@ class _WorkoutSessionDialogState extends State<WorkoutSessionDialog> {
     );
   }
 
-  void _deleteSet(int exerciseIndex, int setIndex) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete Set'),
-        content: Text('Are you sure you want to delete Set ${setIndex + 1}?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              setState(() {
-                final exercise = _exercises[exerciseIndex];
-                final exerciseId = exercise.id;
-                
-                // Remove the set from actualSets
-                final updatedSets = List<ActualSet>.from(exercise.actualSets);
-                updatedSets.removeAt(setIndex);
-                
-                _exercises[exerciseIndex] = exercise.copyWith(actualSets: updatedSets);
-                
-                // Remove the corresponding controllers
-                _editRepsControllers[exerciseId]![setIndex].dispose();
-                _editKgControllers[exerciseId]![setIndex].dispose();
-                _editRepsControllers[exerciseId]!.removeAt(setIndex);
-                _editKgControllers[exerciseId]!.removeAt(setIndex);
-              });
-              
-              _saveProgress();
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _addSet(int exerciseIndex) {
-    final exercise = _exercises[exerciseIndex];
-    final exerciseId = exercise.id;
-    
+  void _toggleEditMode() {
     setState(() {
-      // Add a new set with default values
-      final updatedSets = List<ActualSet>.from(exercise.actualSets);
-      updatedSets.add(ActualSet(reps: exercise.reps, kg: exercise.weight ?? 0.0));
-      
-      _exercises[exerciseIndex] = exercise.copyWith(actualSets: updatedSets);
-      
-      // Add new controllers for the new set
-      _editRepsControllers[exerciseId]!.add(
-        TextEditingController(text: exercise.reps.toString())
-      );
-      _editKgControllers[exerciseId]!.add(
-        TextEditingController(text: (exercise.weight ?? 0.0).toString())
-      );
+      _isEditingResults = !_isEditingResults;
     });
-    
-    _saveProgress();
   }
 
-  void _saveChanges() {
+  void _saveEditedResults() {
+    // Validate all inputs first
+    for (int exerciseIndex = 0; exerciseIndex < _exercises.length; exerciseIndex++) {
+      final exercise = _exercises[exerciseIndex];
+      final exerciseId = exercise.id;
+      final repsControllers = _editRepsControllers[exerciseId]!;
+      final kgControllers = _editKgControllers[exerciseId]!;
+
+      for (int setIndex = 0; setIndex < repsControllers.length; setIndex++) {
+        final repsText = repsControllers[setIndex].text.trim();
+        final kgText = kgControllers[setIndex].text.trim();
+
+        if (repsText.isEmpty || kgText.isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Please fill in all fields for ${exercise.name}, Set ${setIndex + 1}'),
+              backgroundColor: Colors.red,
+            ),
+          );
+          return;
+        }
+
+        final reps = int.tryParse(repsText);
+        final kg = double.tryParse(kgText);
+
+        if (reps == null || reps <= 0) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Please enter a valid number of reps for ${exercise.name}, Set ${setIndex + 1}'),
+              backgroundColor: Colors.red,
+            ),
+          );
+          return;
+        }
+
+        if (kg == null || kg < 0) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Please enter a valid weight for ${exercise.name}, Set ${setIndex + 1}'),
+              backgroundColor: Colors.red,
+            ),
+          );
+          return;
+        }
+      }
+    }
+
     try {
+      // If validation passes, save the results
       for (int exerciseIndex = 0; exerciseIndex < _exercises.length; exerciseIndex++) {
         final exercise = _exercises[exerciseIndex];
         final exerciseId = exercise.id;
         final repsControllers = _editRepsControllers[exerciseId]!;
         final kgControllers = _editKgControllers[exerciseId]!;
-        
+
         // Update actualSets with values from controllers
         final updatedSets = <ActualSet>[];
         for (int setIndex = 0; setIndex < repsControllers.length; setIndex++) {
-          final reps = int.tryParse(repsControllers[setIndex].text) ?? 0;
-          final kg = double.tryParse(kgControllers[setIndex].text) ?? 0.0;
-          
-          if (reps > 0 && kg >= 0) {
-            updatedSets.add(ActualSet(reps: reps, kg: kg));
-          }
+          final reps = int.parse(repsControllers[setIndex].text.trim());
+          final kg = double.parse(kgControllers[setIndex].text.trim());
+          updatedSets.add(ActualSet(reps: reps, kg: kg));
         }
-        
+
         _exercises[exerciseIndex] = exercise.copyWith(actualSets: updatedSets);
       }
-      
+
       _saveProgress();
-      
       setState(() {
-        _isEditMode = false;
+        _isEditingResults = false;
       });
-      
+
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Changes saved successfully!'),
@@ -632,10 +653,115 @@ class _WorkoutSessionDialogState extends State<WorkoutSessionDialog> {
     );
   }
 
-Set ${setIndex + 1}'),
-                          subtitle: Text('${set.reps} reps × ${set.kg} kg'),
-                        );
-                      }).toList(),
+  Widget _buildCompletionView() {
+    return Padding(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        children: [
+          const Icon(
+            Icons.celebration,
+            size: 80,
+            color: Colors.green,
+          ),
+          const SizedBox(height: 20),
+          const Text(
+            'Workout Completed!',
+            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.green),
+          ),
+          const SizedBox(height: 10),
+          const Text(
+            'Great job! Review your results below.',
+            style: TextStyle(fontSize: 16),
+          ),
+          const SizedBox(height: 20),
+
+          Expanded(
+            child: ListView.builder(
+              itemCount: _exercises.length,
+              itemBuilder: (context, exerciseIndex) {
+                final exercise = _exercises[exerciseIndex];
+                return Card(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  child: ExpansionTile(
+                    title: Text(
+                      exercise.name,
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    subtitle: Text('${exercise.actualSets.length} sets completed'),
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Your Results:',
+                              style: TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                            const SizedBox(height: 8),
+                            ...exercise.actualSets.asMap().entries.map((entry) {
+                              final setIndex = entry.key;
+                              final set = entry.value;
+                              final exerciseId = exercise.id;
+
+                              if (_isEditingResults) {
+                                // Edit mode - show TextFields
+                                return Card(
+                                  color: Colors.blue.shade50,
+                                  margin: const EdgeInsets.symmetric(vertical: 4),
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(12),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'Set ${setIndex + 1}',
+                                          style: const TextStyle(fontWeight: FontWeight.bold),
+                                        ),
+                                        const SizedBox(height: 8),
+                                        Row(
+                                          children: [
+                                            Expanded(
+                                              child: TextField(
+                                                controller: _editRepsControllers[exerciseId]![setIndex],
+                                                keyboardType: TextInputType.number,
+                                                decoration: const InputDecoration(
+                                                  labelText: 'Reps',
+                                                  border: OutlineInputBorder(),
+                                                  contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                                                ),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 12),
+                                            Expanded(
+                                              child: TextField(
+                                                controller: _editKgControllers[exerciseId]![setIndex],
+                                                keyboardType: TextInputType.numberWithOptions(decimal: true),
+                                                decoration: const InputDecoration(
+                                                  labelText: 'Weight (kg)',
+                                                  border: OutlineInputBorder(),
+                                                  contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              } else {
+                                // View mode - show read-only results
+                                return ListTile(
+                                  leading: const Icon(Icons.check_circle, color: Colors.green),
+                                  title: Text('Set ${setIndex + 1}'),
+                                  subtitle: Text('${set.reps} reps × ${set.kg} kg'),
+                                );
+                              }
+                            }).toList(),
+                          ],
+                        ),
+                      ),
                     ],
                   ),
                 );
@@ -644,20 +770,71 @@ Set ${setIndex + 1}'),
           ),
 
           const SizedBox(height: 20),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: _submitCompletedWorkout,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.green,
-                padding: const EdgeInsets.symmetric(vertical: 16),
+          _isEditingResults
+            ? Column(
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: _toggleEditMode,
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                          ),
+                          child: const Text(
+                            'Cancel Edit',
+                            style: TextStyle(fontSize: 16),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: _saveEditedResults,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.blue,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                          ),
+                          child: const Text(
+                            'Save Changes',
+                            style: TextStyle(fontSize: 16),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              )
+            : Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: _toggleEditMode,
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                      ),
+                      child: const Text(
+                        'Edit Results',
+                        style: TextStyle(fontSize: 16),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: _submitCompletedWorkout,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                      ),
+                      child: const Text(
+                        'Submit to Trainer',
+                        style: TextStyle(fontSize: 16),
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              child: const Text(
-                'Submit to Trainer',
-                style: TextStyle(fontSize: 18),
-              ),
-            ),
-          ),
         ],
       ),
     );
