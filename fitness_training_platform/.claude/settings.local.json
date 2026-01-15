@@ -1,7 +1,17 @@
 {
   "permissions": {
     "allow": [
-      "Bash(flutter run:*)"
+      "Bash(flutter run:*)",
+      "Bash(flutter emulators --launch pixel_7_-_api_35)",
+      "Bash(adb install -r buildappoutputsflutter-apkapp-debug.apk)",
+      "Bash(flutter install -d emulator-5554)",
+      "Bash(flutter pub get:*)",
+      "Bash(tasklist:*)",
+      "Bash(findstr:*)",
+      "Bash(clip)",
+      "Bash(flutter analyze:*)",
+      "Bash(timeout /t 20 /nobreak)",
+      "Bash(nc:*)"
     ],
     "deny": [],
     "ask": []

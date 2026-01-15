@@ -1,4 +1,53 @@
 // ==================== lib/shared/models/nutrition_model.dart ====================
+
+/// @class RecipeModel
+/// @brief Represents a recipe with ingredients and nutritional information
+/// @details Contains recipe details including name, description, ingredients,
+/// preparation instructions, and caloric information
+class RecipeModel {
+  final String id;
+  final String name;
+  final String description;
+  final List<String> ingredients;
+  final List<String> instructions;
+  final int calories;
+  final int prepTimeMinutes;
+
+  RecipeModel({
+    required this.id,
+    required this.name,
+    required this.description,
+    required this.ingredients,
+    required this.instructions,
+    required this.calories,
+    required this.prepTimeMinutes,
+  });
+
+  factory RecipeModel.fromJson(Map<String, dynamic> json) {
+    return RecipeModel(
+      id: json['id'],
+      name: json['name'],
+      description: json['description'],
+      ingredients: List<String>.from(json['ingredients']),
+      instructions: List<String>.from(json['instructions']),
+      calories: json['calories'],
+      prepTimeMinutes: json['prepTimeMinutes'],
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'description': description,
+      'ingredients': ingredients,
+      'instructions': instructions,
+      'calories': calories,
+      'prepTimeMinutes': prepTimeMinutes,
+    };
+  }
+}
+
 class NutritionPlanModel {
   final String id;
   final String traineeId;
@@ -7,6 +56,7 @@ class NutritionPlanModel {
   final int dailyCalories;
   final Map<String, int> macros;
   final List<MealModel> meals;
+  final List<RecipeModel> recipes;
   final DateTime createdAt;
 
   NutritionPlanModel({
@@ -17,6 +67,7 @@ class NutritionPlanModel {
     required this.dailyCalories,
     required this.macros,
     required this.meals,
+    required this.recipes,
     required this.createdAt,
   });
 
@@ -31,6 +82,9 @@ class NutritionPlanModel {
       meals: (json['meals'] as List)
           .map((e) => MealModel.fromJson(e))
           .toList(),
+      recipes: (json['recipes'] as List?)
+          ?.map((e) => RecipeModel.fromJson(e))
+          .toList() ?? [],
       createdAt: DateTime.parse(json['createdAt']),
     );
   }
@@ -44,6 +98,7 @@ class NutritionPlanModel {
       'dailyCalories': dailyCalories,
       'macros': macros,
       'meals': meals.map((e) => e.toJson()).toList(),
+      'recipes': recipes.map((e) => e.toJson()).toList(),
       'createdAt': createdAt.toIso8601String(),
     };
   }

@@ -24,6 +24,7 @@ dependencies:
   # HTTP & Data
   http: ^1.1.0
   shared_preferences: ^2.2.2
+  path_provider: ^2.1.1
 
   # Charts
   fl_chart: ^1.1.1
@@ -31,6 +32,9 @@ dependencies:
   # Utils
   intl: ^0.20.2
   uuid: ^4.1.0
+
+  # Health & Fitness
+  health: ^13.2.1
 
 dev_dependencies:
   flutter_test:

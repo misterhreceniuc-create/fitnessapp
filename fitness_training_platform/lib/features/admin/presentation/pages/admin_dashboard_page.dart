@@ -2,10 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../shared/providers/auth_provider.dart';
+import '../../../../shared/providers/language_provider.dart';
+import '../../../../shared/widgets/language_switcher.dart';
 import '../../../../shared/models/user_model.dart';
 import '../../../../shared/services/user_service.dart';
 import '../../../../core/dependency_injection/injection_container.dart';
 import '../../../../routing/route_names.dart';
+import '../widgets/add_user_dialog.dart';
+import '../widgets/edit_user_dialog.dart';
 
 class AdminDashboardPage extends StatefulWidget {
   const AdminDashboardPage({super.key});
@@ -42,15 +46,17 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
   @override
   Widget build(BuildContext context) {
     final currentUser = context.watch<AuthProvider>().currentUser;
-    
+    final lang = context.watch<LanguageProvider>();
+
     return Scaffold(
       appBar: AppBar(
-        title: Text('Admin Dashboard - ${currentUser?.name}'),
+        title: Text('${lang.translate('admin_dashboard')} - ${currentUser?.name}'),
         actions: [
           IconButton(
             icon: const Icon(Icons.settings),
             onPressed: _showSettings,
           ),
+          const LanguageSwitcher(),
           IconButton(
             icon: const Icon(Icons.logout),
             onPressed: _logout,
@@ -240,24 +246,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
   void _addNewUser() {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Add New User'),
-        content: const Text('This would open a form to add a new user.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Add user feature coming soon!')),
-              );
-            },
-            child: const Text('Create'),
-          ),
-        ],
+      barrierDismissible: false,
+      builder: (context) => AddUserDialog(
+        onUserCreated: _refreshUsers,
       ),
     );
   }
@@ -333,24 +324,10 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
   void _editUser(UserModel user) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Edit ${user.name}'),
-        content: Text('Edit form for ${user.name} would appear here.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('${user.name} updated!')),
-              );
-            },
-            child: const Text('Save'),
-          ),
-        ],
+      barrierDismissible: false,
+      builder: (context) => EditUserDialog(
+        user: user,
+        onUserUpdated: _refreshUsers,
       ),
     );
   }

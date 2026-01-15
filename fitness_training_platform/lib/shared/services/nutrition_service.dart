@@ -21,9 +21,11 @@ class NutritionService {
       dailyCalories: plan.dailyCalories,
       macros: plan.macros,
       meals: plan.meals,
+      recipes: plan.recipes,
       createdAt: DateTime.now(),
     );
     _mockNutritionPlans.add(newPlan);
+    print('Created nutrition plan for trainee ${plan.traineeId}: ${plan.dailyCalories} calories/day, ${plan.recipes.length} recipes');
     return newPlan;
   }
 
